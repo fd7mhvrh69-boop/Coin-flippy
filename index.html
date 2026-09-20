@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="manifest" href="manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Coin Flipper Pro</title>
+    <style>
+        body {
+            margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #121212; color: white;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden;
+        }
+        .app-container { text-align: center; width: 100%; max-width: 400px; padding: 20px; }
+        h1 { font-size: 2.5rem; margin-bottom: 40px; color: #ffd700; text-shadow: 0 2px 10px rgba(255,215,0,0.2); }
+        .coin-container { width: 150px; height: 150px; margin: 0 auto 50px auto; perspective: 1000px; }
+        .coin { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 2s cubic-bezier(0.25, 1, 0.5, 1); }
+        .side {
+            position: absolute; width: 100%; height: 100%; border-radius: 50%;
+            backface-visibility: hidden; display: flex; justify-content: center; align-items: center;
+            font-size: 5rem; background: radial-gradient(circle, #ffe066, #f5b041);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5), inset 0 0 15px rgba(255,255,255,0.6);
+            border: 4px solid #d4ac0d;
+            user-select: none;
+        }
+        .tails { transform: rotateY(180deg); background: radial-gradient(circle, #e5e7e9, #bdc3c7); border: 4px solid #95a5a6; box-shadow: 0 10px 25px rgba(0,0,0,0.5), inset 0 0 15px rgba(255,255,255,0.9); }
+        
+        .btn-group { display: flex; flex-direction: column; gap: 15px; align-items: center; }
+        button {
+            background: #ffd700; color: #121212; border: none; padding: 15px 50px;
+            font-size: 1.2rem; font-weight: bold; border-radius: 30px; cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 215, 0, 0.3); transition: transform 0.1s, opacity 0.2s;
+        }
+        button:active { transform: scale(0.95); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .reset-btn { background: transparent; color: #ff4d4d; border: 2px solid #ff4d4d; padding: 8px 20px; font-size: 0.9rem; box-shadow: none; }
+        .reset-btn:active { transform: scale(0.95); }
+        
+        .stats { display: flex; justify-content: space-around; margin-top: 40px; font-size: 1.2rem; color: #aaa; background: #1e1e1e; padding: 15px; border-radius: 15px; }
+        .stats span { color: #fff; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <h1>Coin Flipper</h1>
+        <div class="coin-container">
+            <div class="coin" id="coin">
+                <div class="side heads">🪙</div>
+                <div class="side tails">👑</div>
+            </div>
+        </div>
+        <div class="btn-group">
+            <button id="flip-btn">FLIP COIN</button>
+            <button id="reset-btn" class="reset-btn">Reset Stats</button>
+        </div>
+        <div class="stats">
+            <p>Heads: <span id="heads-count">0</span></p>
+            <p>Tails: <span id="tails-count">0</span></p>
+        </div>
+    </div>
+    <script>
+        const coin = document.getElementById('coin');
+        const flipBtn = document.getElementById('flip-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const headsCountEl = document.getElementById('heads-count');
+        const tailsCountEl = document.getElementById('tails-count');
+        
+        let headsCount = parseInt(localStorage.getItem('coin_heads')) || 0;
+        let tailsCount = parseInt(localStorage.getItem('coin_tails')) || 0;
+        let currentRotation = 0;
+
+        headsCountEl.textContent = headsCount;
+        tailsCountEl.textContent = tailsCount;
+
+        // Dynamic audio generator for the coin clink
+        function playCoinSound() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+                
+                // Primary high-pitch ding
+                const osc1 = ctx.createOscillator();
+                const gain1 = ctx.createGain();
+                osc1.type = 'sine';
+                osc1.frequency.setValueAtTime(850, ctx.currentTime);
+                osc1.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.3);
+                
+                // Metallic overtone
+                const osc2 = ctx.createOscillator();
+                const gain2 = ctx.createGain();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(1200, ctx.currentTime);
+                osc2.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.15);
+
+                // Audio envelopes for a decaying ring sound
+                gain1.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+                
+                gain2.gain.setValueAtTime(0.15, ctx.currentTime);
+                gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+
+                osc1.connect(gain1);
+                gain1.connect(ctx.destination);
+                osc2.connect(gain2);
+                gain2.connect(ctx.destination);
+
+                osc1.start();
+                osc2.start();
+                osc1.stop(ctx.currentTime + 0.4);
+                osc2.stop(ctx.currentTime + 0.15);
+            } catch (e) {
+                console.log("Audio couldn't play: ", e);
+            }
+        }
+
+        flipBtn.addEventListener('click', () => {
+            flipBtn.disabled = true;
+            
+            // Play sound right as the coin flips
+            playCoinSound();
+            
+            const isHeads = Math.random() < 0.5;
+            const extraSpins = 1440; 
+            
+            let targetAngle = isHeads ? 0 : 180;
+            let currentBase = currentRotation - (currentRotation % 360);
+            currentRotation = currentBase + extraSpins + targetAngle;
+            
+            coin.style.transform = `rotateY(${currentRotation}deg)`;
+            
+            setTimeout(() => {
+                if (isHeads) {
+                    headsCount++;
+                    localStorage.setItem('coin_heads', headsCount);
+                    headsCountEl.textContent = headsCount;
+                } else {
+                    tailsCount++;
+                    localStorage.setItem('coin_tails', tailsCount);
+                    tailsCountEl.textContent = tailsCount;
+                }
+                flipBtn.disabled = false;
+            }, 2000);
+        });
+
+        resetBtn.addEventListener('click', () => {
+            if(confirm("Are you sure you want to reset your scores?")) {
+                headsCount = 0;
+                tailsCount = 0;
+                localStorage.setItem('coin_heads', 0);
+                localStorage.setItem('coin_tails', 0);
+                headsCountEl.textContent = 0;
+                tailsCountEl.textContent = 0;
+                currentRotation = 0;
+                coin.style.transform = `rotateY(0deg)`;
+            }
+        });
+    </script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(() => console.log('Service Worker Registered!'))
+            .catch((err) => console.log('Registration Failed: ', err));
+        });
+      }
+    </script>
+</body>
+</html>
+
